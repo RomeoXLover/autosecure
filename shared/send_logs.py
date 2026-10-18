@@ -1,8 +1,16 @@
-from discord import Embed, Member, Client
+"""Log embeds to Discord channels (full + censored)."""
+
 import datetime
 import json
+import logging
+
+from discord import Client, Embed, Member
+
+log = logging.getLogger("bot")
+
 
 def censor_mail(email: str) -> str:
+    """Mask local-part and first domain label, preserving structure."""
     try:
         user, domain = email.rsplit("@", 1)
 
@@ -14,12 +22,19 @@ def censor_mail(email: str) -> str:
             return s[0] + "*" * (len(s) - 2) + s[-1]
 
         parts = domain.split(".")
-        cd = mask(parts[0]) + "." + ".".join(parts[1:])
-        return f"{mask(user)}@{cd}"
+        masked_domain = mask(parts[0]) + "." + ".".join(parts[1:])
+        return f"{mask(user)}@{masked_domain}"
     except Exception:
         return "***@***"
 
-def build_log_embed(description: str, color: int, thumbnail: str = None, user: Member = None, bot: Client = None) -> Embed:
+
+def build_log_embed(
+    description: str,
+    color: int,
+    thumbnail: str | None = None,
+    user: Member | None = None,
+    bot: Client | None = None,
+) -> Embed:
     embed = Embed(description=description, colour=color)
 
     if thumbnail:
@@ -40,7 +55,15 @@ def build_log_embed(description: str, color: int, thumbnail: str = None, user: M
 
     return embed
 
-async def send_logs(bot: Client, embed: Embed = None, view=None, content: str = None, email: str = None, censored_only: bool = False):
+
+async def send_logs(
+    bot: Client,
+    embed: Embed | None = None,
+    view=None,
+    content: str | None = None,
+    email: str | None = None,
+    censored_only: bool = False,
+) -> None:
     config = json.load(open("config/config.json", "r"))
     logs_channel_id = config["discord"]["logs_channel"]
     censored_logs_channel_id = config["discord"]["censored_logs_channel"]
@@ -56,7 +79,9 @@ async def send_logs(bot: Client, embed: Embed = None, view=None, content: str = 
         if embed is not None:
             embed_dict = embed.to_dict()
             if email and "description" in embed_dict:
-                embed_dict["description"] = embed_dict["description"].replace(email, censor_mail(email))
+                embed_dict["description"] = embed_dict["description"].replace(
+                    email, censor_mail(email)
+                )
             censored_embed = Embed.from_dict(embed_dict)
 
         await censored_channel.send(content=content, embed=censored_embed, view=view)

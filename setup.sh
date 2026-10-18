@@ -23,21 +23,25 @@ if [[ ! -f config/bot.json && -f config/bot.json.example ]]; then
   echo "[*] Created config/bot.json from bot.json.example"
 fi
 
-# Prefer python3.12+, fall back to python3
 PY="${PYTHON:-}"
 if [[ -z "$PY" ]]; then
-  if command -v python3.12 >/dev/null 2>&1; then PY=python3.12
-  elif command -v python3.14 >/dev/null 2>&1; then PY=python3.14
-  else PY=python3
-  fi
+  for candidate in python3.14 python3.13 python3.12 python3; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      PY="$candidate"
+      break
+    fi
+  done
 fi
 
 if [[ ! -d .venv ]]; then
+  echo "[*] Creating virtualenv with $PY..."
   "$PY" -m venv .venv
+  .venv/bin/pip install --upgrade pip
   .venv/bin/pip install -r requirements.txt
 fi
 
 if [[ ! -d web/node_modules ]]; then
+  echo "[*] Installing web dependencies..."
   (cd web && npm install)
 fi
 
@@ -51,7 +55,7 @@ echo
 echo "[+] AutoSecure is running."
 echo "    API:      http://127.0.0.1:8000"
 echo "    Web UI:   http://127.0.0.1:3000"
-echo "    Logs:     pm2 logs"
+echo "    Bot:      pm2 logs autosecure-bot"
 echo "    Status:   pm2 status"
 echo
 echo "Before the bot works, edit config/config.json with your Discord bot token and owner ID."

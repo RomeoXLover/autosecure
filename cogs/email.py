@@ -1,14 +1,22 @@
-from ui.buttons.mail_inbox import get_inbox
+"""Email management cog — list, inbox, and create security emails."""
 
-from database.database import DBConnection
-from discord.ext import commands
-import discord
 import json
+import logging
 import uuid
 
-config = json.load(open("config/config.json", "r"))
-bot_config = json.load(open("config/bot.json", "r"))
-name = bot_config["enabled_commands"]["aliases"]["email"]
+import discord
+from discord.ext import commands
+
+from database.database import DBConnection
+from ui.buttons.mail_inbox import get_inbox
+
+log = logging.getLogger("bot")
+
+
+def _alias() -> str:
+    with open("config/bot.json") as f:
+        return json.load(f)["enabled_commands"]["aliases"]["email"]
+
 
 class MailListView(discord.ui.View):
     size = 10
@@ -18,61 +26,79 @@ class MailListView(discord.ui.View):
         self.emails = emails
         self.page = page
         self.total_pages = max(1, (len(emails) + self.size - 1) // self.size)
+        self._build_items()
 
-        previous_button = discord.ui.Button(
+    def _build_items(self):
+        prev_btn = discord.ui.Button(
             label="◀",
             style=discord.ButtonStyle.secondary,
-            disabled=(page == 0),
-            row=0\
+            disabled=(self.page == 0),
+            row=0,
         )
-        previous_button.callback = self.previous
-        self.add_item(previous_button)
+        prev_btn.callback = self._previous
+        self.add_item(prev_btn)
 
-        self.add_item(discord.ui.Button(
-            label=f"{page + 1} / {self.total_pages}",
-            style=discord.ButtonStyle.primary,
-            disabled=True,
-            row=0
-        ))
+        self.add_item(
+            discord.ui.Button(
+                label=f"{self.page + 1} / {self.total_pages}",
+                style=discord.ButtonStyle.primary,
+                disabled=True,
+                row=0,
+            )
+        )
 
-        next_button = discord.ui.Button(
+        next_btn = discord.ui.Button(
             label="▶",
             style=discord.ButtonStyle.secondary,
-            disabled=(page >= self.total_pages - 1),
-            row=0
+            disabled=(self.page >= self.total_pages - 1),
+            row=0,
         )
-        next_button.callback = self.next
-        self.add_item(next_button)
+        next_btn.callback = self._next
+        self.add_item(next_btn)
 
     def build_embed(self) -> discord.Embed:
         start = self.page * self.size
-        chunk = self.emails[start:start + self.size]
-        lines = "\n".join(f"`{start + i + 1}.` {e[0]}" for i, e in enumerate(chunk))
+        chunk = self.emails[start : start + self.size]
+        lines = "\n".join(
+            f"`{start + i + 1}.` {e[0]}" for i, e in enumerate(chunk)
+        )
         return discord.Embed(
             title="Security Emails",
             description=f"**{len(self.emails)}** email(s) stored:\n\n{lines}",
-            color=0x3B89FF
-        ).set_footer(text="These emails are automatically deleted after 7 days")
+            color=0x3B89FF,
+        ).set_footer(
+            text="These emails are automatically deleted after 7 days"
+        )
 
-    async def previous(self, interaction: discord.Interaction):
+    async def _previous(self, interaction: discord.Interaction):
         view = MailListView(self.emails, self.page - 1)
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        await interaction.response.edit_message(
+            embed=view.build_embed(), view=view
+        )
 
-    async def next(self, interaction: discord.Interaction):
+    async def _next(self, interaction: discord.Interaction):
         view = MailListView(self.emails, self.page + 1)
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        await interaction.response.edit_message(
+            embed=view.build_embed(), view=view
+        )
 
 
 class Email(commands.Cog):
-    mail = discord.SlashCommandGroup(name, "Commands related email features")
+    mail = discord.SlashCommandGroup(_alias(), "Commands related email features")
 
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     @mail.command(name="new", description="Register a new email address (Needs domain)")
-    async def createMail(self, ctx: discord.ApplicationContext, alias: str):
+    async def create_mail(
+        self,
+        ctx: discord.ApplicationContext,
+        alias: discord.Option(str, "Alias for the email (e.g. 'recover')"),
+    ):
         if ctx.author.id not in self.bot.admins:
-            await ctx.respond("You do not have permission to execute this command!", ephemeral=True)
+            await ctx.respond(
+                "You do not have permission to execute this command!", ephemeral=True
+            )
             return
 
         await ctx.response.defer(ephemeral=True)
@@ -80,13 +106,20 @@ class Email(commands.Cog):
         password = uuid.uuid4().hex[:12]
         if "@" in alias:
             alias = alias.split("@")[0]
-        email = f"{alias}@{config["domain"]}"
+
+        with open("config/config.json", "r") as f:
+            config = json.load(f)
+        email = f"{alias}@{config['domain']}"
 
         with DBConnection() as database:
-            if email in [e[0] for e in database.get_security_emails()]:
+            existing = database.get_security_emails()
+            if email in [e[0] for e in existing]:
                 await ctx.respond(
-                    embed=discord.Embed(description=f"`{email}` has already been created", color=0xFA4343),
-                    ephemeral=True
+                    embed=discord.Embed(
+                        description=f"`{email}` has already been created",
+                        color=0xFA4343,
+                    ),
+                    ephemeral=True,
                 )
                 return
             database.add_security_email(email, password)
@@ -95,15 +128,21 @@ class Email(commands.Cog):
             embed=discord.Embed(
                 title="Email Created",
                 description=f"`{email}` has been added!",
-                color=0x57F287
+                color=0x57F287,
             ),
-            ephemeral=True
+            ephemeral=True,
         )
 
     @mail.command(name="inbox", description="Shows the inbox of your email")
-    async def emailInbox(self, ctx: discord.ApplicationContext, email: str):
+    async def email_inbox(
+        self,
+        ctx: discord.ApplicationContext,
+        email: discord.Option(str, "The security email to check"),
+    ):
         if ctx.author.id not in self.bot.admins:
-            await ctx.respond("You do not have permission to execute this command!", ephemeral=True)
+            await ctx.respond(
+                "You do not have permission to execute this command!", ephemeral=True
+            )
             return
 
         await ctx.response.defer(ephemeral=True)
@@ -111,26 +150,35 @@ class Email(commands.Cog):
 
         if not inbox:
             await ctx.respond(
-                embed=discord.Embed(description="This email has not been found", color=0xFA4343),
-                ephemeral=True
+                embed=discord.Embed(
+                    description="This email has not been found",
+                    color=0xFA4343,
+                ),
+                ephemeral=True,
             )
             return
 
         if len(inbox) == 0:
             await ctx.respond(
-                embed=discord.Embed(description="No emails found in inbox.", color=0xFA4343),
-                ephemeral=True
+                embed=discord.Embed(
+                    description="No emails found in inbox.",
+                    color=0xFA4343,
+                ),
+                ephemeral=True,
             )
             return
 
         await ctx.respond(embed=inbox["embed"], view=inbox["view"], ephemeral=True)
 
     @mail.command(name="list", description="Lists all security emails")
-    async def listMails(self, ctx: discord.ApplicationContext):
+    async def list_mails(self, ctx: discord.ApplicationContext):
         if ctx.author.id not in self.bot.admins:
-            await ctx.respond("You do not have permission to execute this command!", ephemeral=True)
+            await ctx.respond(
+                "You do not have permission to execute this command!", ephemeral=True
+            )
             return
 
+        await ctx.response.defer(ephemeral=True)
         with DBConnection() as database:
             emails = list(database.get_security_emails())
 
@@ -139,9 +187,9 @@ class Email(commands.Cog):
                 embed=discord.Embed(
                     title="No Emails Found",
                     description="You don't have any emails stored",
-                    color=0xFA4343
+                    color=0xFA4343,
                 ),
-                ephemeral=True
+                ephemeral=True,
             )
             return
 

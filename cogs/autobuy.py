@@ -1,20 +1,26 @@
-from discord.ext import commands, tasks
-import discord
+"""Post the autobuy selling panel and run periodic hold checks."""
+
 import json
 import logging
+from datetime import datetime, timezone
 
+import discord
+from discord.ext import commands, tasks
+
+from database.database import DBConnection
+from payments.ltc_wallet import get_ltc_wallet
+from securing.autobuy_hold_check import process_due_hold_checks
 from ui.buttons.autobuy import AutobuyView, build_autobuy_embed, refresh_autobuy_panels
 from ui.modals.autobuy import _dm_owners
-from payments.ltc_wallet import get_ltc_wallet
-from database.database import DBConnection
-from securing.autobuy_hold_check import process_due_hold_checks
 
-bot_config = json.load(open("config/bot.json", "r"))
-name = bot_config["enabled_commands"]["aliases"]["autobuy"]
-logger = logging.getLogger("bot")
+log = logging.getLogger("bot")
 
-# 5 hours 50 minutes
 _DEFAULT_LOCK_SECOND_HOURS = 5.0 + 50.0 / 60.0
+
+
+def _alias() -> str:
+    with open("config/bot.json") as f:
+        return json.load(f)["enabled_commands"]["aliases"]["autobuy"]
 
 
 def _autobuy_cfg() -> dict:
@@ -23,7 +29,7 @@ def _autobuy_cfg() -> dict:
 
 
 class Autobuy(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._balance_watch.start()
         self._hold_check.start()
@@ -34,11 +40,11 @@ class Autobuy(commands.Cog):
 
     @tasks.loop(seconds=15)
     async def _balance_watch(self):
-        """Poll explorer/hot wallet and rewrite panel embeds when LTC balance changes."""
+        """Poll explorer/hot wallet and rewrite panel embeds on LTC balance change."""
         try:
             await refresh_autobuy_panels(self.bot)
         except Exception:
-            logger.exception("autobuy balance watch failed")
+            log.exception("autobuy balance watch failed")
 
     @_balance_watch.before_loop
     async def _before_balance_watch(self):
@@ -46,7 +52,7 @@ class Autobuy(commands.Cog):
         try:
             await refresh_autobuy_panels(self.bot, force=True)
         except Exception:
-            logger.exception("autobuy initial panel refresh failed")
+            log.exception("autobuy initial panel refresh failed")
 
     @tasks.loop(minutes=15)
     async def _hold_check(self):
@@ -67,19 +73,15 @@ class Autobuy(commands.Cog):
                 limit=20,
             )
         except Exception:
-            logger.exception("autobuy hold check loop failed")
+            log.exception("autobuy hold check loop failed")
             return
 
         stats = result.get("stats") or {}
-        if (
-            stats.get("checked")
-            or stats.get("voided")
-            or stats.get("cleared")
-            or stats.get("sec_checked")
-            or stats.get("lock_checked")
-            or stats.get("partial")
+        if any(
+            stats.get(k)
+            for k in ("checked", "voided", "cleared", "sec_checked", "lock_checked", "partial")
         ):
-            logger.info(
+            log.info(
                 "autobuy hold check: checked=%s sec=%s lock=%s partial=%s cleared=%s "
                 "voided=%s rescheduled=%s skipped=%s",
                 stats.get("checked", 0),
@@ -111,7 +113,6 @@ class Autobuy(commands.Cog):
         credit_id = ev.get("credit_id")
         available = ev.get("available_at") or "unknown"
         creds = ev.get("credentials") or {}
-        # Prefer secured primary; fall back to credit email
         login_email = (creds.get("email") or email or "?").strip()
         sec = (creds.get("security_email") or "").strip()
         pwd = (creds.get("password") or "").strip()
@@ -139,15 +140,13 @@ class Autobuy(commands.Cog):
             if mc and mc not in ("Unknown", "No Minecraft", "N/A"):
                 lines.append(f"MC: {mc}")
             lines.append("```")
-            copy_line = " ".join(
-                [
-                    login_email,
-                    rc or "N/A",
-                    pwd or "N/A",
-                    sec or "N/A",
-                    mc or "N/A",
-                ]
-            )
+            copy_line = " ".join([
+                login_email,
+                rc or "N/A",
+                pwd or "N/A",
+                sec or "N/A",
+                mc or "N/A",
+            ])
             lines.append(f"Copy:\n```{copy_line}```")
             return "\n".join(lines)
 
@@ -188,7 +187,7 @@ class Autobuy(commands.Cog):
                 user = await self.bot.fetch_user(seller_id)
             await user.send(embed=seller_embed)
         except Exception:
-            logger.exception(
+            log.exception(
                 "Failed to DM void notice to seller %s for %s",
                 seller_id,
                 email,
@@ -197,7 +196,7 @@ class Autobuy(commands.Cog):
         try:
             await _dm_owners(self.bot, embeds=[owner_embed])
         except Exception:
-            logger.exception(
+            log.exception(
                 "Failed to DM owners about void credit=%s email=%s",
                 credit_id,
                 email,
@@ -243,30 +242,28 @@ class Autobuy(commands.Cog):
             color=0xF1C40F,
         )
 
-        # Seller
         try:
             user = self.bot.get_user(seller_id)
             if user is None:
                 user = await self.bot.fetch_user(seller_id)
             await user.send(embed=seller_embed)
         except Exception:
-            logger.exception(
+            log.exception(
                 "Failed to DM partial notice to seller %s for %s",
                 seller_id,
                 email,
             )
 
-        # Owners
         try:
             await _dm_owners(self.bot, embeds=[owner_embed])
         except Exception:
-            logger.exception(
+            log.exception(
                 "Failed to DM owners about partial credit=%s email=%s",
                 credit_id,
                 email,
             )
 
-    @discord.slash_command(name=name, description="Post the account selling (autobuy) panel")
+    @discord.slash_command(name=_alias(), description="Post the account selling (autobuy) panel")
     async def autobuy(self, ctx: discord.ApplicationContext):
         if ctx.author.id not in self.bot.admins:
             await ctx.respond(
@@ -293,5 +290,5 @@ class Autobuy(commands.Cog):
         )
 
 
-def setup(bot):
+def setup(bot: commands.Bot) -> None:
     bot.add_cog(Autobuy(bot))

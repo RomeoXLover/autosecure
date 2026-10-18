@@ -1,27 +1,41 @@
-from datetime import datetime
-import json
+"""Top MFA sellers leaderboard."""
 
-from discord.ext import commands
+import json
+import logging
+from datetime import datetime, timezone
+
 import discord
+from discord.ext import commands
 
 from database.database import DBConnection
 
-bot_config = json.load(open("config/bot.json", "r"))
-name = bot_config["enabled_commands"]["aliases"]["leaderboard"]
+log = logging.getLogger("bot")
+
+
+def _alias() -> str:
+    with open("config/bot.json") as f:
+        return json.load(f)["enabled_commands"]["aliases"]["leaderboard"]
 
 
 class Leaderboard(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     @discord.slash_command(
-        name=name,
+        name=_alias(),
         description="Top MFA sellers by accounts sold and $ paid",
     )
     async def leaderboard(
         self,
         ctx: discord.ApplicationContext,
-        limit: discord.Option(int, "How many sellers to show", required=False, default=10, min_value=1, max_value=25) = 10,
+        limit: discord.Option(
+            int,
+            "How many sellers to show",
+            required=False,
+            default=10,
+            min_value=1,
+            max_value=25,
+        ) = 10,
     ):
         await ctx.defer()
         with DBConnection() as db:
@@ -44,7 +58,7 @@ class Leaderboard(commands.Cog):
             title="Seller Leaderboard",
             description="\n".join(lines),
             color=0x2B2D31,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         embed.set_footer(text=f"Top {len(rows)} by MFA sold")
         await ctx.followup.send(embed=embed)

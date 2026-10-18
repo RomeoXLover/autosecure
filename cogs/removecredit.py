@@ -1,25 +1,28 @@
 """Owner-only command to remove autobuy credits (balance may go negative)."""
 
-from datetime import datetime
 import json
 import logging
+from datetime import datetime, timezone
 
-from discord.ext import commands
 import discord
+from discord.ext import commands
 
 from database.database import DBConnection
 
-bot_config = json.load(open("config/bot.json", "r"))
-name = bot_config["enabled_commands"]["aliases"]["removecredit"]
-logger = logging.getLogger("bot")
+log = logging.getLogger("bot")
+
+
+def _alias() -> str:
+    with open("config/bot.json") as f:
+        return json.load(f)["enabled_commands"]["aliases"]["removecredit"]
 
 
 class RemoveCredit(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     @discord.slash_command(
-        name=name,
+        name=_alias(),
         description="(Owner) Remove autobuy credits from a user (can go negative)",
     )
     async def removecredit(
@@ -64,7 +67,7 @@ class RemoveCredit(commands.Cog):
                 )
                 bals = db.autobuy_balances(user.id)
         except Exception as exc:
-            logger.exception("removecredit failed for %s amount=%s", user.id, amount)
+            log.exception("removecredit failed for %s amount=%s", user.id, amount)
             await ctx.followup.send(
                 f"Failed to remove credits.\n```{exc}```",
                 ephemeral=True,
@@ -84,7 +87,7 @@ class RemoveCredit(commands.Cog):
                 f"Pending: **${bals['pending_usd']:.2f}**"
             ),
             color=0xED4245,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         embed.set_footer(text=f"Removed by {ctx.author} ({ctx.author.id})")
         await ctx.followup.send(embed=embed, ephemeral=True)
@@ -101,7 +104,7 @@ class RemoveCredit(commands.Cog):
             )
             await user.send(embed=dm)
         except Exception:
-            logger.info("Could not DM credit debit recipient %s", user.id)
+            log.info("Could not DM credit debit recipient %s", user.id)
 
 
 def setup(bot: commands.Bot) -> None:

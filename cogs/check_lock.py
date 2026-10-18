@@ -1,55 +1,78 @@
+"""Check if a Microsoft account is locked or suspended."""
+
+import json
+import logging
+
 from discord.ext import commands
 import discord
-import json
 
 from securing.auth.check_locked import check_locked
 
-config = json.load(open("config/bot.json", "r"))
-name = config["enabled_commands"]["aliases"]["check_lock"]
+log = logging.getLogger("bot")
 
-class checkLock(commands.Cog):
-    check = discord.SlashCommandGroup(name)
 
-    def __init__(self, bot):
+def _alias() -> str:
+    with open("config/bot.json") as f:
+        return json.load(f)["enabled_commands"]["aliases"]["check_lock"]
+
+
+class CheckLock(commands.Cog):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @check.command(name="locked", description="Checks if an account is locked")
-    async def command(self, ctx: discord.ApplicationContext, email: str):
+    check = discord.SlashCommandGroup(_alias())
 
+    @check.command(name="locked", description="Checks if an account is locked")
+    async def command(
+        self,
+        ctx: discord.ApplicationContext,
+        email: discord.Option(str, "The email address to check"),
+    ):
         if ctx.author.id not in self.bot.admins:
-            await ctx.respond("You do not have permission to execute this command!", ephemeral=True)
+            await ctx.respond(
+                "You do not have permission to execute this command!", ephemeral=True
+            )
             return
 
         await ctx.defer(ephemeral=True)
 
-        lockedInfo = await check_locked(email)
-        
-        if lockedInfo:
-            status_code = lockedInfo["StatusCode"]
+        locked_info = await check_locked(email)
 
+        if locked_info:
+            status_code = locked_info.get("StatusCode")
             if status_code is not None and status_code != 500:
-                value_raw = lockedInfo["Value"]
+                value_raw = locked_info.get("Value")
                 if value_raw:
                     try:
                         value_data = json.loads(value_raw)
                         status = value_data["status"]
-                        is_suspended = status["isAccountSuspended"]
-                        is_phone_locked = status["isPhoneLocked"]
-
-                        if is_suspended:
-                            await ctx.followup.send(f"This email is **suspended/locked**", ephemeral=True)
-                        elif is_phone_locked:
-                            await ctx.followup.send(f"This email is **phone locked** (requires phone verification to unlock)", ephemeral=True)
+                        if status.get("isAccountSuspended"):
+                            await ctx.followup.send(
+                                "This email is **suspended/locked**", ephemeral=True
+                            )
+                        elif status.get("isPhoneLocked"):
+                            await ctx.followup.send(
+                                "This email is **phone locked** "
+                                "(requires phone verification to unlock)",
+                                ephemeral=True,
+                            )
                         else:
-                            await ctx.followup.send(f"This email is **not** locked", ephemeral=True)
+                            await ctx.followup.send(
+                                "This email is **not** locked", ephemeral=True
+                            )
                         return
-                    except Exception as e:
-                        await ctx.followup.send(f"Failed to check if account is locked, try again.", ephemeral=True)
+                    except (KeyError, json.JSONDecodeError, TypeError):
+                        pass
 
-                await ctx.followup.send(f"This email is **locked**", ephemeral=True)
+                await ctx.followup.send(
+                    "This email is **locked**", ephemeral=True
+                )
                 return
 
-        await ctx.followup.send(f"Failed to check if this email is locked", ephemeral=True)
+        await ctx.followup.send(
+            "Failed to check if this account is locked", ephemeral=True
+        )
+
 
 def setup(bot: commands.Bot) -> None:
-    bot.add_cog(checkLock(bot))
+    bot.add_cog(CheckLock(bot))

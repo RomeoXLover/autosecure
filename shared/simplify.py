@@ -1,15 +1,27 @@
-def simplify(amount: float) -> str:
+"""Number formatting utility — abbreviate large numbers with K/M/B/T suffixes."""
+
+
+def simplify(amount) -> str:
+    """Format a number with magnitude suffix.
+
+    Returns ``"0"`` for falsy input, ``"1.23M"`` for millions, etc.
+    Always returns a string (callers embed this in Discord messages).
+    """
     if not amount:
-        return 0
-    
-    amount = float(amount)
-    if amount >= 1_000_000_000_000:
-        return f"{amount / 1_000_000_000_000:.2f}T"
-    elif amount >= 1_000_000_000:
-        return f"{amount / 1_000_000_000:.2f}B"
-    elif amount >= 1_000_000:
-        return f"{amount / 1_000_000:.2f}M"
-    elif amount >= 1_000:
-        return f"{amount / 1_000:.2f}K"
-    else:
-        return f"{amount:.2f}"
+        return "0"
+
+    try:
+        val = float(amount)
+    except (TypeError, ValueError):
+        return "0"
+
+    units = [
+        (1_000_000_000_000, "T"),
+        (1_000_000_000, "B"),
+        (1_000_000, "M"),
+        (1_000, "K"),
+    ]
+    for threshold, suffix in units:
+        if val >= threshold:
+            return f"{val / threshold:.2f}{suffix}"
+    return f"{val:.2f}"
