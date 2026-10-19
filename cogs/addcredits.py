@@ -1,28 +1,25 @@
 """Owner-only command to grant withdrawable autobuy credits."""
 
+from datetime import datetime
 import json
 import logging
-from datetime import datetime, timezone
 
-import discord
 from discord.ext import commands
+import discord
 
 from database.database import DBConnection
 
-log = logging.getLogger("bot")
-
-
-def _alias() -> str:
-    with open("config/bot.json") as f:
-        return json.load(f)["enabled_commands"]["aliases"]["addcredits"]
+bot_config = json.load(open("config/bot.json", "r"))
+name = bot_config["enabled_commands"]["aliases"]["addcredits"]
+logger = logging.getLogger("bot")
 
 
 class AddCredits(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot):
         self.bot = bot
 
     @discord.slash_command(
-        name=_alias(),
+        name=name,
         description="(Owner) Add withdrawable autobuy credits to a user",
     )
     async def addcredits(
@@ -66,7 +63,7 @@ class AddCredits(commands.Cog):
                 )
                 bals = db.autobuy_balances(user.id)
         except Exception as exc:
-            log.exception("addcredits failed for %s amount=%s", user.id, amount)
+            logger.exception("addcredits failed for %s amount=%s", user.id, amount)
             await ctx.followup.send(
                 f"Failed to add credits.\n```{exc}```",
                 ephemeral=True,
@@ -85,11 +82,12 @@ class AddCredits(commands.Cog):
                 f"Pending: **${bals['pending_usd']:.2f}**"
             ),
             color=0x57F287,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.utcnow(),
         )
         embed.set_footer(text=f"Added by {ctx.author} ({ctx.author.id})")
         await ctx.followup.send(embed=embed, ephemeral=True)
 
+        # Notify the recipient (best-effort)
         try:
             dm = discord.Embed(
                 title="You received autobuy credits",
@@ -102,7 +100,7 @@ class AddCredits(commands.Cog):
             )
             await user.send(embed=dm)
         except Exception:
-            log.info("Could not DM credit recipient %s", user.id)
+            logger.info("Could not DM credit recipient %s", user.id)
 
 
 def setup(bot: commands.Bot) -> None:

@@ -1,23 +1,13 @@
-"""Secure accounts via recovery code / password-secret with bulk support."""
-
-import json
-import logging
-
-import discord
-from discord.ext import commands
-
-from ui.modals.recovery_code import recoveryCodeModal
+from ui.modals.recovery_secret_bulk import BulkAuthRecoveryModal
 from ui.modals.recovery_code_bulk import BulkRecoveryCodeModal
 from ui.modals.recovery_secret import recoveryAuthModal
-from ui.modals.recovery_secret_bulk import BulkAuthRecoveryModal
+from ui.modals.recovery_code import recoveryCodeModal
+from discord.ext import commands
+import discord
+import json
 
-log = logging.getLogger("bot")
-
-
-def _alias() -> str:
-    with open("config/bot.json") as f:
-        return json.load(f)["enabled_commands"]["aliases"]["secure"]
-
+bot_config = json.load(open("config/bot.json", "r"))
+name = bot_config["enabled_commands"]["aliases"]["secure"]
 
 class Dropdown(discord.ui.Select):
     def __init__(self):
@@ -25,30 +15,30 @@ class Dropdown(discord.ui.Select):
             discord.SelectOption(
                 label="Recovery Code",
                 description="Uses email + recovery code",
-                value="rcvcode",
+                value="rcvcode"
             ),
             discord.SelectOption(
                 label="Recovery Code Bulk",
                 description="Uses email + recovery code",
-                value="bulk_rcvcode",
+                value="bulk_rcvcode"
             ),
             discord.SelectOption(
                 label="Password + Secret",
                 description="Uses auth secret and password",
-                value="pwdsecret",
+                value="pwdsecret"
             ),
             discord.SelectOption(
                 label="Password + Secret Bulk",
                 description="Bulk option for password + secret",
-                value="bulk_pwdsecret",
-            ),
+                value="bulk_pwdsecret"
+            )
         ]
         super().__init__(
             placeholder="Select Securing Method",
             min_values=1,
             max_values=1,
             options=options,
-            row=0,
+            row=0
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -62,44 +52,48 @@ class Dropdown(discord.ui.Select):
                 modal = recoveryAuthModal()
             case "bulk_pwdsecret":
                 modal = BulkAuthRecoveryModal()
-            case _:
-                return
-
+            
         await interaction.response.send_modal(modal)
 
 
-class Secure(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+class secure(commands.Cog):
+    def __init__(self, bot):
         self.bot = bot
 
-    @discord.slash_command(name=_alias(), description="Automatically secures your account")
+    @discord.slash_command(name=name, description="Automaticly secures your account")
     async def secure(self, ctx: discord.ApplicationContext):
         if ctx.author.id not in self.bot.admins:
-            await ctx.respond(
-                "You do not have permission to execute this command!", ephemeral=True
-            )
+            await ctx.respond("You do not have permission to execute this command!", ephemeral=True)
             return
-
+    
+       
         embed = discord.Embed(
-            title="Select Securing Method",
-            description=(
-                "Choose how you want to authenticate:\n\n"
-                "**Recovery Code**\n"
-                "Use your email and recovery code\n\n"
-                "**Recovery Code Bulk**\n"
-                "Secures multiple accounts via recovery code\n\n"
-                "**Password + Secret (Needs 2FA)**\n"
-                "Use your email, password and authenticator secret\n\n"
-                "**Password + Secret Bulk**\n"
-                "Secure multiple accounts via pwd and secret"
-            ),
+            title = "Select Securing Method",
+            description = """
+            Choose how you want to authenticate:
+           
+            **Recovery Code**
+            Use your email and recovery code
+
+            **Recovery Code Bulk**
+            Secures multiple accounts via recobery code
+
+            **Password + Secret (Needs 2FA)**
+            Use your email, password and authenticator secret
+
+            **Password + Secret Bulk**
+            Secure multiple accounts via pwd and secret
+            """
         )
 
         view = discord.ui.View()
         view.add_item(Dropdown())
 
-        await ctx.respond(embed=embed, view=view, ephemeral=True)
-
+        await ctx.respond(
+            embed = embed,
+            view = view,
+            ephemeral = True
+        )
 
 def setup(bot: commands.Bot) -> None:
-    bot.add_cog(Secure(bot))
+    bot.add_cog(secure(bot))

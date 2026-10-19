@@ -6,12 +6,12 @@ module.exports = {
       script: ".venv/bin/python",
       args: "-m uvicorn app:app --host 127.0.0.1 --port 8000 --app-dir web",
       env: {
-        CORS_ORIGINS: "http://127.0.0.1:3000,http://localhost:3000",
+        // API stays localhost-only; Nitro proxies /api from the public UI
+        CORS_ORIGINS:
+          "http://127.0.0.1:3000,http://localhost:3000",
       },
       autorestart: true,
       max_restarts: 10,
-      watch: false,
-      max_memory_size: "512M",
     },
     {
       name: "autosecure-web",
@@ -26,8 +26,6 @@ module.exports = {
       },
       autorestart: true,
       max_restarts: 10,
-      watch: false,
-      max_memory_size: "512M",
     },
     {
       name: "autosecure-bot",
@@ -39,8 +37,6 @@ module.exports = {
       },
       autorestart: true,
       max_restarts: 10,
-      watch: false,
-      max_memory_size: "512M",
     },
   ],
 };

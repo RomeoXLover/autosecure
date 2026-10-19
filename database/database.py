@@ -220,11 +220,13 @@ class DBConnection:
         self.conn.commit()
 
     def get_email_password(self, email: str) -> str | None:
-        row = self.cursor.execute(
-            "SELECT password FROM `security_emails` WHERE email = ?",
-            (email,),
+        password = self.cursor.execute("""
+            SELECT password FROM `security_emails`
+            WHERE email = ?
+        """, (email,)
         ).fetchone()
-        return row[0] if row else None
+
+        return password
 
     def get_security_emails(self) -> tuple:
         emails = self.cursor.execute("""
